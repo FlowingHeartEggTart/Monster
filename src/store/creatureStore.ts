@@ -6,6 +6,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  */
 export type MonsterType = 'healing' | 'quiet' | 'empathy';
 
+/**
+ * 怪兽视觉编号（对应素材 1.JPG, 2.JPG 等）
+ */
+export type MonsterIndex = 1 | 2;
+
 export interface MonsterConfig {
   type: MonsterType;
   name: string;
@@ -13,6 +18,7 @@ export interface MonsterConfig {
   personality: string;
   color: string;
   emoji: string;
+  index: MonsterIndex;  // 对应的素材编号
 }
 
 export const MONSTER_TYPES: Record<MonsterType, MonsterConfig> = {
@@ -23,6 +29,7 @@ export const MONSTER_TYPES: Record<MonsterType, MonsterConfig> = {
     personality: '软萌、爱撒娇、话多一点',
     color: '#FFCAD4',
     emoji: '🌸',
+    index: 1,
   },
   quiet: {
     type: 'quiet',
@@ -31,6 +38,7 @@ export const MONSTER_TYPES: Record<MonsterType, MonsterConfig> = {
     personality: '话少、安静陪着、偶尔说一句',
     color: '#A5C9E8',
     emoji: '☁️',
+    index: 2,
   },
   empathy: {
     type: 'empathy',
@@ -39,6 +47,7 @@ export const MONSTER_TYPES: Record<MonsterType, MonsterConfig> = {
     personality: '有点丧、但很懂你、不评判',
     color: '#C5A8E8',
     emoji: '💜',
+    index: 1,  // 共用怪兽1的素材
   },
 };
 

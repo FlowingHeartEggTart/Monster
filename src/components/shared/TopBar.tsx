@@ -14,7 +14,7 @@ import Animated, {
 
 /**
  * 全局顶部状态栏
- * 显示怪兽名字和蛋糕数量
+ * 显示怪兽名字、蛋糕数量和个人中心入口
  */
 export function TopBar() {
   const router = useRouter();
@@ -24,7 +24,7 @@ export function TopBar() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   
   const buttonScale = useSharedValue(1);
-  const buttonOpacity = useSharedValue(0.7);
+  const profileScale = useSharedValue(1);
   
   const handleReset = () => {
     setShowConfirmModal(true);
@@ -41,19 +41,32 @@ export function TopBar() {
     setShowConfirmModal(false);
   };
   
+  const handleGoToProfile = () => {
+    router.push('/profile');
+  };
+  
   const buttonAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: buttonScale.value }],
-    opacity: buttonOpacity.value,
+  }));
+  
+  const profileAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: profileScale.value }],
   }));
   
   const handlePressIn = () => {
     buttonScale.value = withSpring(0.92);
-    buttonOpacity.value = withTiming(1, { duration: 150 });
   };
   
   const handlePressOut = () => {
     buttonScale.value = withSpring(1);
-    buttonOpacity.value = withTiming(0.7, { duration: 150 });
+  };
+  
+  const handleProfilePressIn = () => {
+    profileScale.value = withSpring(0.9);
+  };
+  
+  const handleProfilePressOut = () => {
+    profileScale.value = withSpring(1);
   };
   
   if (!monsterType || !monsterName) {
@@ -65,23 +78,31 @@ export function TopBar() {
   return (
     <>
       <View style={styles.container}>
-        <Text style={styles.monsterText}>
-          {monsterConfig.emoji} {monsterName}在陪你
-        </Text>
+        {/* 左侧：怪兽信息 */}
+        <TouchableOpacity 
+          onPress={handleGoToProfile}
+          onPressIn={handleProfilePressIn}
+          onPressOut={handleProfilePressOut}
+          activeOpacity={1}
+          style={styles.leftSection}
+        >
+          <Animated.View style={[styles.avatarContainer, profileAnimatedStyle]}>
+            <View style={[styles.miniAvatar, { backgroundColor: monsterConfig.color }]}>
+              <Text style={styles.miniAvatarEmoji}>{monsterConfig.emoji}</Text>
+            </View>
+            <View style={styles.monsterInfo}>
+              <Text style={styles.monsterName}>{monsterName}</Text>
+              <Text style={styles.monsterHint}>点击查看成长</Text>
+            </View>
+          </Animated.View>
+        </TouchableOpacity>
+        
+        {/* 右侧：蛋糕数量 */}
         <View style={styles.rightSection}>
-          <Text style={styles.cakeText}>
-            🧁 × {cakeCount}
-          </Text>
-          <TouchableOpacity
-            onPress={handleReset}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            activeOpacity={1}
-          >
-            <Animated.View style={[styles.resetButton, buttonAnimatedStyle]}>
-              <Text style={styles.resetButtonText}>重新开始</Text>
-            </Animated.View>
-          </TouchableOpacity>
+          <View style={styles.cakeContainer}>
+            <Text style={styles.cakeEmoji}>🍰</Text>
+            <Text style={styles.cakeCount}>{cakeCount}</Text>
+          </View>
         </View>
       </View>
       
@@ -125,46 +146,67 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: colors.white,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: 'rgba(240, 240, 240, 0.8)',
   },
-  monsterText: {
-    fontSize: 14,
-    color: colors.text,
-    fontWeight: '500',
+  leftSection: {
     flex: 1,
   },
-  rightSection: {
+  avatarContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
-  cakeText: {
-    fontSize: 14,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  resetButton: {
-    backgroundColor: 'rgba(197, 168, 232, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(197, 168, 232, 0.3)',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    shadowColor: colors.accent.purple,
+  miniAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: colors.text,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
   },
-  resetButtonText: {
-    fontSize: 12,
-    color: colors.accent.purple,
-    fontWeight: '500',
-    letterSpacing: 0.5,
+  miniAvatarEmoji: {
+    fontSize: 18,
+  },
+  monsterInfo: {
+    gap: 1,
+  },
+  monsterName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  monsterHint: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  rightSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cakeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 229, 160, 0.3)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  cakeEmoji: {
+    fontSize: 16,
+  },
+  cakeCount: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
   },
   modalOverlay: {
     flex: 1,

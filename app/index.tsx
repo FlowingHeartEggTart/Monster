@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { StyleSheet, View, SafeAreaView, Dimensions, Text, TouchableOpacity, Image } from 'react-native';
+import { StyleSheet, View, SafeAreaView, Dimensions, Text, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Video, ResizeMode } from 'expo-av';
 import { useCreatureStore, MONSTER_TYPES } from '@/store/creatureStore';
 import { colors } from '@/theme/colors';
 import { TopBar } from '@/components/shared/TopBar';
 import { MindfulnessCard } from '@/components/creature/MindfulnessCard';
+import { MonsterVideoPlayer, MonsterAnimationState } from '@/components/creature/MonsterVideoPlayer';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -32,14 +32,52 @@ const DAILY_PHRASES = [
   '想你了',
 ];
 
+// 基于时间的问候语
+const getTimeGreeting = (name: string): string => {
+  const hour = new Date().getHours();
+  if (hour >= 6 && hour < 12) {
+    return `早安~今天要加油哦！`;
+  } else if (hour >= 12 && hour < 14) {
+    return `午饭时间，吃得好一点~`;
+  } else if (hour >= 14 && hour < 18) {
+    return `下午好，我在这里陪你`;
+  } else if (hour >= 18 && hour < 22) {
+    return `晚上了，今天辛苦了`;
+  } else {
+    return `这么晚了，早点休息哦`;
+  }
+};
+
+// 久未打开时的想念语
+const getMissPhrase = (lastVisit: Date | null): string | null => {
+  if (!lastVisit) return null;
+  const hoursSinceLastVisit = (Date.now() - lastVisit.getTime()) / (1000 * 60 * 60);
+  if (hoursSinceLastVisit >= 24) {
+    return '你好久没来了...我很想你';
+  }
+  return null;
+};
+
 // 心情状态
 type MoodType = 'happy' | 'normal' | 'miss' | 'eating';
 
-const MOOD_CONFIG: Record<MoodType, { label: string; color: string }> = {
-  happy: { label: '开心', color: '#FFE5A0' },
-  normal: { label: '一般', color: '#A5C9E8' },
-  miss: { label: '想你了', color: '#FFCAD4' },
-  eating: { label: '在吃东西', color: '#C5A8E8' },
+const MOOD_CONFIG: Record<MoodType, { label: string; color: string; emoji: string }> = {
+  happy: { label: '开心', color: '#FFE5A0', emoji: '😊' },
+  normal: { label: '一般', color: '#A5C9E8', emoji: '😌' },
+  miss: { label: '想你了', color: '#FFCAD4', emoji: '🥺' },
+  eating: { label: '在吃东西', color: '#C5A8E8', emoji: '😋' },
+};
+
+// 动画状态显示
+const ANIMATION_STATE_LABEL: Record<MonsterAnimationState, string> = {
+  idle: '',
+  eating: '🍰 正在吃蛋糕...',
+  touched: '💕 被摸了！',
+  listening: '👂 在听...',
+  empathy: '💝 感同身受',
+  serious: '😐 认真脸',
+  company: '🤝 陪伴中',
+  regret: '😢 有点难过',
 };
 
 /**
@@ -58,24 +96,30 @@ export default function HomePage() {
   } = useCreatureStore();
   
   const [showMindfulnessModal, setShowMindfulnessModal] = useState(false);
-  const [currentPhrase, setCurrentPhrase] = useState(DAILY_PHRASES[0]);
+  const [currentPhrase, setCurrentPhrase] = useState('');
   const [mood, setMood] = useState<MoodType>('normal');
   const [isAnimating, setIsAnimating] = useState(false);
-  const [showVideo, setShowVideo] = useState(false);
+  const [monsterAnimation, setMonsterAnimation] = useState<MonsterAnimationState>('idle');
+  const [showCakeAnimation, setShowCakeAnimation] = useState(false);
+  const [lastTapTime, setLastTapTime] = useState(0);
   
-  const videoRef = useRef<Video>(null);
+  const monsterVideoRef = useRef<any>(null);
   const breathScale = useSharedValue(1);
   const floatY = useSharedValue(0);
   const tapScale = useSharedValue(1);
   const bubbleOpacity = useSharedValue(1);
+  const cakePosition = useSharedValue(300);
+  const cakeOpacity = useSharedValue(0);
   
-  // 每日重置检查
+  // 每日重置检查 + 初始问候
   useEffect(() => {
     resetDaily();
+    // 初始显示时间问候
+    setCurrentPhrase(getTimeGreeting(monsterName || ''));
     // 随机初始心情
     const moods: MoodType[] = ['happy', 'normal', 'miss'];
     setMood(moods[Math.floor(Math.random() * moods.length)]);
-  }, []);
+  }, [monsterName]);
   
   // 呼吸浮动动画
   useEffect(() => {
@@ -112,15 +156,22 @@ export default function HomePage() {
     transform: [{ translateY: floatY.value }],
   }));
   
-  // 点击怪兽交互
+  // 蛋糕飞入动画样式
+  const cakeAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: cakePosition.value }],
+    opacity: cakeOpacity.value,
+  }));
+  
+  // 点击怪兽交互（3秒冷却）
   const handleMonsterTap = () => {
-    if (isAnimating) return;
+    const now = Date.now();
+    if (isAnimating || now - lastTapTime < 3000) return; // 3秒冷却
     
+    setLastTapTime(now);
     setIsAnimating(true);
     
-    // 播放视频
-    setShowVideo(true);
-    videoRef.current?.playAsync();
+    // 切换到被点击动画
+    setMonsterAnimation('touched');
     
     // 点击动画
     tapScale.value = withSequence(
@@ -139,15 +190,54 @@ export default function HomePage() {
     setTimeout(() => {
       const newPhrase = DAILY_PHRASES[Math.floor(Math.random() * DAILY_PHRASES.length)];
       setCurrentPhrase(newPhrase);
-      setIsAnimating(false);
     }, 200);
+    
+    // 1.5秒后恢复idle动画
+    setTimeout(() => {
+      setMonsterAnimation('idle');
+      setIsAnimating(false);
+    }, 1500);
+  };
+  
+  // 吃蛋糕动画（4个阶段：蛋糕飞入 → 注意到 → 吃掉 → 满足）
+  const playCakeAnimation = async () => {
+    if (cakeCount <= 0) return;
+    
+    setShowCakeAnimation(true);
+    setMood('eating');
+    
+    // 第1阶段：蛋糕飞入
+    cakePosition.value = 300;
+    cakeOpacity.value = 0;
+    cakePosition.value = withSequence(
+      withTiming(0, { duration: 800, easing: Easing.out(Easing.cubic) })
+    );
+    cakeOpacity.value = withTiming(1, { duration: 300 });
+    setCurrentPhrase('咦，这是...？');
+    
+    // 第2阶段：注意到蛋糕（1秒后）
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    setCurrentPhrase('是蛋糕！给我的吗～');
+    
+    // 第3阶段：切换到吃蛋糕动画（0.8秒后）
+    await new Promise(resolve => setTimeout(resolve, 800));
+    setMonsterAnimation('eating');
+    cakeOpacity.value = withTiming(0, { duration: 300 });
+    setCurrentPhrase('吃掉啦～好好吃！');
+    
+    // 第4阶段：满足表情（2秒后）
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    setShowCakeAnimation(false);
+    setMonsterAnimation('idle');
+    setMood('happy');
+    setCurrentPhrase('谢谢你～今天吃得好满足');
   };
   
   // 视频播放完成
-  const handleVideoEnd = () => {
-    setShowVideo(false);
-    videoRef.current?.stopAsync();
-    videoRef.current?.setPositionAsync(0);
+  const handleAnimationEnd = () => {
+    if (monsterAnimation === 'touched' || monsterAnimation === 'eating') {
+      setMonsterAnimation('idle');
+    }
   };
   
   if (!monsterType || !monsterName) {
@@ -163,79 +253,97 @@ export default function HomePage() {
   
   const monsterConfig = MONSTER_TYPES[monsterType];
   const moodConfig = MOOD_CONFIG[mood];
+  const animStateLabel = ANIMATION_STATE_LABEL[monsterAnimation];
   
   return (
     <SafeAreaView style={styles.safeArea}>
       <TopBar />
       
       <View style={styles.container}>
-        {/* 中央主区域 - 怪兽 (占50%) */}
-        <View style={styles.monsterSection}>
-          {/* 装饰星星 */}
-          <Text style={styles.sparkle1}>✨</Text>
-          <Text style={styles.sparkle2}>✨</Text>
-          <Text style={styles.sparkle3}>·</Text>
+        {/* 顶部状态面板 */}
+        <View style={styles.statusPanel}>
+          <View style={styles.statusCard}>
+            <View style={styles.statusRow}>
+              <View style={styles.statusItem}>
+                <Text style={styles.statusEmoji}>🍰</Text>
+                <Text style={styles.statusValue}>{cakeCount}</Text>
+                <Text style={styles.statusLabel}>蛋糕</Text>
+              </View>
+              <View style={styles.statusDivider} />
+              <View style={styles.statusItem}>
+                <Text style={styles.statusEmoji}>{moodConfig.emoji}</Text>
+                <Text style={[styles.statusValue, { color: moodConfig.color }]}>{moodConfig.label}</Text>
+                <Text style={styles.statusLabel}>心情</Text>
+              </View>
+              <View style={styles.statusDivider} />
+              <View style={styles.statusItem}>
+                <Text style={styles.statusEmoji}>✨</Text>
+                <Text style={styles.statusValue}>{monsterConfig.personality.slice(0, 2)}</Text>
+                <Text style={styles.statusLabel}>性格</Text>
+              </View>
+            </View>
+          </View>
           
+          {/* 喂蛋糕按钮 */}
+          {cakeCount > 0 && (
+            <TouchableOpacity 
+              style={styles.feedButton}
+              onPress={playCakeAnimation}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.feedButtonText}>🧁 喂蛋糕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        
+        <View style={styles.monsterSection}>
           {/* 对话气泡 */}
           <Animated.View style={[styles.speechBubble, bubbleAnimatedStyle]}>
-            <Text style={styles.speechText}>"{currentPhrase}"</Text>
+            <Text style={styles.speechText}>{currentPhrase}</Text>
           </Animated.View>
           
-          {/* 怪兽主体 */}
+          {/* 怪兽区域 */}
           <TouchableOpacity 
             onPress={handleMonsterTap} 
             activeOpacity={1}
             style={styles.monsterTouchable}
           >
             <View style={styles.monsterContainer}>
-              {/* 光晕 */}
+              {/* 多层光晕效果 */}
+              <View style={[styles.monsterGlowOuter, { backgroundColor: monsterConfig.color }]} />
               <View style={[styles.monsterGlow, { backgroundColor: monsterConfig.color }]} />
-              
-              {/* 视频或静态图片 */}
-              {showVideo ? (
-                <View style={styles.monsterVideoContainer}>
-                  <Video
-                    ref={videoRef}
-                    source={require('../assets/monster-eating.mp4')}
-                    style={styles.monsterVideo}
-                    resizeMode={ResizeMode.STRETCH}
-                    shouldPlay={true}
-                    isLooping={false}
-                    useNativeControls={false}
-                    videoStyle={{ width: 240, height: 240 }}
-                    onPlaybackStatusUpdate={(status) => {
-                      if (status.isLoaded && status.didJustFinish) {
-                        handleVideoEnd();
-                      }
-                    }}
-                  />
-                </View>
-              ) : (
-                <Animated.View style={[styles.monsterImageContainer, monsterAnimatedStyle]}>
-                  <Image 
-                    source={require('../assets/monster.png')} 
-                    style={styles.monsterImage}
-                    resizeMode="contain"
-                  />
+              <Animated.View style={[styles.monsterImageContainer, monsterAnimatedStyle]}>
+                <MonsterVideoPlayer
+                  ref={monsterVideoRef}
+                  monsterIndex={monsterConfig.index}
+                  animationState={monsterAnimation}
+                  size={220}
+                  isLooping={monsterAnimation === 'idle'}
+                  autoPlay={true}
+                  onAnimationEnd={handleAnimationEnd}
+                />
+              </Animated.View>
+              {showCakeAnimation && (
+                <Animated.View style={[styles.cakeAnimation, cakeAnimatedStyle]}>
+                  <Text style={styles.cakeEmoji}>🧁</Text>
                 </Animated.View>
               )}
             </View>
           </TouchableOpacity>
           
-          {/* 怪兽名字和状态 */}
+          {/* 怪兽信息 */}
           <View style={styles.monsterInfo}>
             <Text style={styles.monsterName}>{monsterName}</Text>
-            <View style={[styles.moodBadge, { backgroundColor: moodConfig.color }]}>
-              <Text style={styles.moodText}>{moodConfig.label}</Text>
-            </View>
+            {animStateLabel ? (
+              <View style={styles.animStateBadge}>
+                <Text style={styles.animStateText}>{animStateLabel}</Text>
+              </View>
+            ) : (
+              <Text style={styles.tapHint}>点击{monsterName}互动</Text>
+            )}
           </View>
           
-          {/* 点击提示 */}
-          <Text style={styles.tapHint}>点击{monsterName}换一句话</Text>
-          
-          {/* 右侧侧边栏按钮 */}
           <View style={styles.sideButtons}>
-            {/* 正念学堂 */}
             <TouchableOpacity
               style={styles.sideButton}
               onPress={() => setShowMindfulnessModal(true)}
@@ -253,8 +361,18 @@ export default function HomePage() {
                 )}
               </View>
             </TouchableOpacity>
-            
-            {/* 点亮灯塔 */}
+            <TouchableOpacity
+              style={styles.sideButton}
+              onPress={() => router.push('/breathe')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.sideButtonGlass}>
+                <View style={[styles.sideButtonIcon, styles.breatheIcon]}>
+                  <Text style={styles.sideIconText}>🌊</Text>
+                </View>
+                <Text style={styles.sideButtonLabel}>呼吸</Text>
+              </View>
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.sideButton}
               onPress={() => router.push('/lighthouse')}
@@ -276,7 +394,6 @@ export default function HomePage() {
         </View>
       </View>
       
-      {/* 正念学堂弹窗 */}
       <MindfulnessCard
         visible={showMindfulnessModal}
         onClose={() => setShowMindfulnessModal(false)}
@@ -303,151 +420,180 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   
-  // 中央怪兽区域 (占50%)
+  // 状态面板
+  statusPanel: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  statusCard: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    shadowColor: 'rgba(165, 201, 232, 0.4)',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  statusItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statusEmoji: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  statusValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  statusLabel: {
+    fontSize: 10,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  statusDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: 'rgba(0, 0, 0, 0.08)',
+  },
+  feedButton: {
+    backgroundColor: colors.accent.yellow,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 16,
+    shadowColor: colors.accent.yellow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  feedButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  
   monsterSection: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
-    minHeight: SCREEN_HEIGHT * 0.5,
+    paddingBottom: 20,
   },
   
-  // 装饰
-  sparkle1: {
-    position: 'absolute',
-    top: 20,
-    left: 30,
-    fontSize: 18,
-    opacity: 0.5,
-  },
-  sparkle2: {
-    position: 'absolute',
-    top: 60,
-    right: 40,
-    fontSize: 14,
-    opacity: 0.4,
-  },
-  sparkle3: {
-    position: 'absolute',
-    bottom: 80,
-    left: 50,
-    fontSize: 20,
-    opacity: 0.3,
-  },
-  
-  // 对话气泡
   speechBubble: {
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderRadius: 20,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
+    borderRadius: 24,
+    paddingHorizontal: 28,
+    paddingVertical: 16,
     marginBottom: 24,
-    shadowColor: colors.accent.blue,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
     maxWidth: SCREEN_WIDTH * 0.8,
+    shadowColor: 'rgba(165, 201, 232, 0.3)',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
   },
   speechText: {
-    fontSize: 16,
+    fontSize: 17,
     color: colors.text,
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 26,
+    fontWeight: '500',
   },
   
-  // 怪兽
   monsterTouchable: {
     alignItems: 'center',
   },
   monsterContainer: {
-    width: 300,
-    height: 300,
+    width: 280,
+    height: 280,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  monsterGlow: {
+  monsterGlowOuter: {
     position: 'absolute',
     width: 300,
     height: 300,
     borderRadius: 150,
-    opacity: 0.4,
+    opacity: 0.15,
   },
-  monsterBody: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: colors.text,
-    shadowOffset: { width: 0, height: 15 },
-    shadowOpacity: 0.25,
-    shadowRadius: 25,
-    elevation: 10,
+  monsterGlow: {
+    position: 'absolute',
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    opacity: 0.35,
   },
   monsterImageContainer: {
-    width: 240,
-    height: 240,
-    borderRadius: 120,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  monsterImage: {
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-  },
-  // 视频容器（圆形）
-  monsterVideoContainer: {
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  monsterVideo: {
-    width: 240,
-    height: 240,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
   },
   
-  // 怪兽信息
+  cakeAnimation: {
+    position: 'absolute',
+    right: 10,
+    top: '35%',
+  },
+  cakeEmoji: {
+    fontSize: 40,
+  },
+  
   monsterInfo: {
     alignItems: 'center',
     marginTop: 20,
   },
   monsterName: {
-    fontSize: 24,
-    fontWeight: '600',
+    fontSize: 26,
+    fontWeight: '700',
     color: colors.text,
     marginBottom: 8,
+    letterSpacing: 1,
   },
-  moodBadge: {
+  animStateBadge: {
+    backgroundColor: 'rgba(197, 168, 232, 0.3)',
     paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(197, 168, 232, 0.5)',
   },
-  moodText: {
+  animStateText: {
     fontSize: 13,
     color: colors.text,
     fontWeight: '500',
   },
-  
-  // 点击提示
   tapHint: {
-    marginTop: 16,
-    fontSize: 12,
+    fontSize: 13,
     color: colors.textMuted,
+    marginTop: 4,
   },
   
-  // 右侧侧边栏按钮
   sideButtons: {
     position: 'absolute',
     right: 12,
-    top: '35%',
+    top: '25%',
     gap: 12,
     alignItems: 'center',
   },
@@ -480,8 +626,11 @@ const styles = StyleSheet.create({
   mindfulnessIcon: {
     backgroundColor: 'rgba(255, 202, 212, 0.6)',
   },
-  lighthouseIcon: {
+  breatheIcon: {
     backgroundColor: 'rgba(165, 201, 232, 0.6)',
+  },
+  lighthouseIcon: {
+    backgroundColor: 'rgba(197, 168, 232, 0.6)',
   },
   sideIconText: {
     fontSize: 16,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, ScrollView, Modal, TextInput, Animated as RNAnimated } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, ScrollView, Modal, TextInput, Dimensions } from 'react-native';
 import { colors } from '@/theme/colors';
 import { TopBar } from '@/components/shared/TopBar';
 import { useCreatureStore } from '@/store/creatureStore';
@@ -11,115 +11,110 @@ import Animated, {
   withRepeat,
   withSequence,
   withTiming,
+  withSpring,
+  withDelay,
   Easing,
+  FadeIn,
+  FadeInUp,
+  FadeInDown,
+  ZoomIn,
 } from 'react-native-reanimated';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // 微光墙消息
 const LIGHT_WALL_MESSAGES = [
-  "今晚月亮很亮，你也是 🌙",
-  "撑过去了，明天会更好",
-  "抱抱你，也抱抱我自己",
-  "深夜的你，辛苦了",
-  "你已经很棒了，真的",
-  "不是软弱，是在学着照顾自己",
-  "这一刻，我们一起撑过去",
-  "你值得被温柔对待",
-  "无论多晚，你都不是一个人",
-  "明天又是新的开始",
-];
-
-// 灯塔文案
-const LIGHTHOUSE_TEXTS = [
-  { main: "此刻有 {count} 人和你一样", sub: "正在努力守护自己" },
-  { main: "在世界的某个角落", sub: "有 {count} 个人正在经历同样的时刻" },
-  { main: "你不是一个人", sub: "此刻有 {count} 人，也在深夜里撑着" },
-  { main: "{count} 盏微光", sub: "正在各自的角落闪烁" },
+  { text: "今晚月亮很亮，你也是", emoji: "🌙", color: "#FFE5A0" },
+  { text: "撑过去了，明天会更好", emoji: "🌅", color: "#FFCAD4" },
+  { text: "抱抱你，也抱抱我自己", emoji: "🫂", color: "#C5A8E8" },
+  { text: "深夜的你，辛苦了", emoji: "🌃", color: "#A5C9E8" },
+  { text: "你已经很棒了，真的", emoji: "⭐", color: "#FFE5A0" },
+  { text: "不是软弱，是在学着照顾自己", emoji: "💪", color: "#A8E6CF" },
+  { text: "这一刻，我们一起撑过去", emoji: "🤝", color: "#FFCAD4" },
+  { text: "你值得被温柔对待", emoji: "🌸", color: "#FFCAD4" },
+  { text: "无论多晚，你都不是一个人", emoji: "🏠", color: "#A5C9E8" },
+  { text: "明天又是新的开始", emoji: "🌈", color: "#A8E6CF" },
 ];
 
 /**
- * 灯塔页面
- * 灯塔地图 + 守护记录 + 微光墙 + 送微光
+ * 灯塔页面 - 重新设计
+ * 沉浸式星空 + 互动微光 + 温暖社区
  */
 export default function LighthousePage() {
   const { dailyLighthouseCompleted, completeDailyLighthouse, sosSuccessCount } = useCreatureStore();
   const { userHasLit, lightUp, resetJustLit } = useLighthouseStore();
   
   const [onlineCount, setOnlineCount] = useState(47);
-  const [textIndex, setTextIndex] = useState(0);
   const [showSendModal, setShowSendModal] = useState(false);
   const [lightMessage, setLightMessage] = useState('');
   const [sentLight, setSentLight] = useState(false);
   const [showCakeReward, setShowCakeReward] = useState(false);
   const [receivedLight, setReceivedLight] = useState<{ message: string } | null>(null);
+  const [floatingLights, setFloatingLights] = useState<Array<{ id: number; x: number; delay: number }>>([]);
   
-  // 微光墙滚动动画
-  const scrollAnim = useRef(new RNAnimated.Value(0)).current;
+  // 动画值
+  const lighthouseGlow = useSharedValue(0.3);
+  const lighthouseScale = useSharedValue(1);
+  const countScale = useSharedValue(1);
   
-  const glowScale = useSharedValue(1);
-  
-  // 初始化
+  // 生成漂浮的微光
   useEffect(() => {
-    // 模拟在线人数变化
+    const lights = Array.from({ length: 12 }, (_, i) => ({
+      id: i,
+      x: Math.random() * (SCREEN_WIDTH - 60) + 30,
+      delay: Math.random() * 3000,
+    }));
+    setFloatingLights(lights);
+  }, []);
+  
+  // 在线人数变化
+  useEffect(() => {
     const interval = setInterval(() => {
-      setOnlineCount(prev => Math.max(30, prev + Math.floor(Math.random() * 5) - 2));
-    }, 10000);
-    
+      setOnlineCount(prev => {
+        const newCount = Math.max(30, prev + Math.floor(Math.random() * 5) - 2);
+        countScale.value = withSequence(
+          withSpring(1.1, { damping: 8 }),
+          withSpring(1, { damping: 8 })
+        );
+        return newCount;
+      });
+    }, 8000);
     return () => clearInterval(interval);
   }, []);
   
-  // 文案轮换
+  // 灯塔光晕动画
   useEffect(() => {
-    const interval = setInterval(() => {
-      setTextIndex(prev => (prev + 1) % LIGHTHOUSE_TEXTS.length);
-    }, 5000);
-    
-    return () => clearInterval(interval);
-  }, []);
-  
-  // 微光墙滚动动画
-  useEffect(() => {
-    const animation = RNAnimated.loop(
-      RNAnimated.timing(scrollAnim, {
-        toValue: -200,
-        duration: 20000,
-        useNativeDriver: true,
-      })
-    );
-    animation.start();
-    
-    return () => animation.stop();
-  }, []);
-  
-  // 光晕动画
-  useEffect(() => {
-    glowScale.value = withRepeat(
+    lighthouseGlow.value = withRepeat(
       withSequence(
-        withTiming(1.2, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.ease) })
+        withTiming(0.8, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.3, { duration: 2000, easing: Easing.inOut(Easing.ease) })
       ),
       -1,
       false
     );
   }, []);
   
-  const glowAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: glowScale.value }],
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: lighthouseGlow.value,
+    transform: [{ scale: 1 + lighthouseGlow.value * 0.3 }],
   }));
   
-  // 获取当前灯塔文案
-  const getCurrentText = () => {
-    const text = LIGHTHOUSE_TEXTS[textIndex];
-    return {
-      main: text.main.replace('{count}', String(onlineCount)),
-      sub: text.sub.replace('{count}', String(onlineCount)),
-    };
+  const countStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: countScale.value }],
+  }));
+  
+  // 点击灯塔
+  const handleLighthouseTap = () => {
+    lighthouseScale.value = withSequence(
+      withSpring(0.9, { damping: 10 }),
+      withSpring(1.05, { damping: 10 }),
+      withSpring(1, { damping: 10 })
+    );
   };
   
-  // 打开送微光弹窗
-  const openSendModal = () => {
-    setShowSendModal(true);
-    setLightMessage('');
-  };
+  const lighthouseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: lighthouseScale.value }],
+  }));
   
   // 发送微光
   const sendLight = () => {
@@ -129,460 +124,682 @@ export default function LighthousePage() {
     if (!dailyLighthouseCompleted) {
       completeDailyLighthouse();
       lightUp();
-      
-      // 显示蛋糕奖励
-      setTimeout(() => {
-        setShowCakeReward(true);
-      }, 500);
-      
-      // 3秒后重置
-      setTimeout(() => {
-        resetJustLit();
-      }, 3000);
+      setTimeout(() => setShowCakeReward(true), 500);
+      setTimeout(() => resetJustLit(), 3000);
     }
     
     // 模拟收到微光
     setTimeout(() => {
       setReceivedLight({
-        message: lightMessage || '今晚也辛苦了，你已经很棒了',
+        message: lightMessage || LIGHT_WALL_MESSAGES[Math.floor(Math.random() * LIGHT_WALL_MESSAGES.length)].text,
       });
-    }, 5000);
+    }, 4000);
   };
-  
-  // 关闭收到微光提示
-  const closeReceivedLight = () => {
-    setReceivedLight(null);
-  };
-  
-  const currentText = getCurrentText();
   
   return (
     <SafeAreaView style={styles.safeArea}>
-      <TopBar />
+      {/* 星空背景 */}
+      <View style={styles.starryBackground}>
+        {/* 静态星星 */}
+        {Array.from({ length: 50 }).map((_, i) => (
+          <View
+            key={`star-${i}`}
+            style={[
+              styles.star,
+              {
+                width: Math.random() * 3 + 1,
+                height: Math.random() * 3 + 1,
+                top: `${Math.random() * 100}%`,
+                left: `${Math.random() * 100}%`,
+                opacity: Math.random() * 0.6 + 0.2,
+              }
+            ]}
+          />
+        ))}
+        
+        {/* 漂浮的微光 */}
+        {floatingLights.map((light) => (
+          <FloatingLight key={light.id} x={light.x} delay={light.delay} />
+        ))}
+      </View>
+      
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.container}>
-          {/* 灯塔地图 */}
-          <View style={styles.mapSection}>
-            {/* 星星背景 */}
-            {Array.from({ length: 30 }).map((_, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.star,
-                  {
-                    width: Math.random() * 4 + 2,
-                    height: Math.random() * 4 + 2,
-                    top: `${Math.random() * 80 + 10}%`,
-                    left: `${Math.random() * 80 + 10}%`,
-                    opacity: Math.random() * 0.5 + 0.3,
-                    backgroundColor: i === 0 ? colors.lighthouse.light : colors.accent.blue,
-                  }
-                ]}
-              />
-            ))}
-            
-            {/* 灯塔 */}
-            <View style={styles.lighthouseContainer}>
-              <Animated.View style={[styles.lighthouseGlow, glowAnimatedStyle]} />
-              <Text style={styles.lighthouseEmoji}>🗼</Text>
-            </View>
-            
-            {/* 文案 */}
-            <Text style={styles.mapTextMain}>{currentText.main}</Text>
-            <Text style={styles.mapTextSub}>{currentText.sub}</Text>
+        {/* 灯塔主区域 */}
+        <View style={styles.lighthouseSection}>
+          <TouchableOpacity onPress={handleLighthouseTap} activeOpacity={1}>
+            <Animated.View style={[styles.lighthouseWrapper, lighthouseStyle]}>
+              {/* 多层光晕 */}
+              <Animated.View style={[styles.glowOuter, glowStyle]} />
+              <Animated.View style={[styles.glowMiddle, glowStyle]} />
+              <Animated.View style={[styles.glowInner, glowStyle]} />
+              
+              {/* 灯塔本体 */}
+              <View style={styles.lighthouse}>
+                <Text style={styles.lighthouseIcon}>🗼</Text>
+              </View>
+            </Animated.View>
+          </TouchableOpacity>
+          
+          {/* 在线人数 */}
+          <Animated.View style={[styles.onlineContainer, countStyle]} entering={FadeInUp.delay(300)}>
+            <View style={styles.onlineDot} />
+            <Text style={styles.onlineCount}>{onlineCount}</Text>
+            <Text style={styles.onlineLabel}>人正在守护自己</Text>
+          </Animated.View>
+          
+          <Animated.Text style={styles.lighthouseQuote} entering={FadeIn.delay(500)}>
+            "在最深的夜里，我们是彼此的光"
+          </Animated.Text>
+        </View>
+        
+        {/* 微光墙 */}
+        <Animated.View style={styles.lightWallSection} entering={FadeInUp.delay(400)}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>✨ 微光墙</Text>
+            <Text style={styles.sectionSubtitle}>来自陌生人的温暖</Text>
           </View>
           
-          {/* 守护记录 */}
-          <View style={styles.guardCard}>
-            <Text style={styles.guardTitle}>你的守护记录</Text>
-            <View style={styles.guardStats}>
-              <View style={styles.guardStatItem}>
-                <Text style={styles.guardStatNumber}>{Math.min(sosSuccessCount, 5)}</Text>
-                <Text style={styles.guardStatLabel}>今日守护</Text>
-              </View>
-              <View style={styles.guardDivider} />
-              <View style={styles.guardStatItem}>
-                <Text style={styles.guardStatNumber}>{sosSuccessCount}</Text>
-                <Text style={styles.guardStatLabel}>累计守护</Text>
-              </View>
-            </View>
-          </View>
-          
-          {/* 微光墙 */}
-          <View style={styles.lightWallCard}>
-            <Text style={styles.lightWallTitle}>💫 微光墙</Text>
-            <View style={styles.lightWallContainer}>
-              <RNAnimated.View 
-                style={[
-                  styles.lightWallScroll,
-                  { transform: [{ translateY: scrollAnim }] }
-                ]}
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.lightWallScroll}
+          >
+            {LIGHT_WALL_MESSAGES.map((msg, idx) => (
+              <Animated.View 
+                key={idx}
+                entering={FadeInUp.delay(500 + idx * 100)}
+                style={[styles.lightCard, { borderLeftColor: msg.color }]}
               >
-                {[...LIGHT_WALL_MESSAGES, ...LIGHT_WALL_MESSAGES].map((msg, idx) => (
-                  <Text key={idx} style={styles.lightWallMessage}>"{msg}"</Text>
-                ))}
-              </RNAnimated.View>
-            </View>
-          </View>
+                <Text style={styles.lightCardEmoji}>{msg.emoji}</Text>
+                <Text style={styles.lightCardText}>"{msg.text}"</Text>
+              </Animated.View>
+            ))}
+          </ScrollView>
+        </Animated.View>
+        
+        {/* 我的守护 */}
+        <Animated.View style={styles.statsSection} entering={FadeInUp.delay(600)}>
+          <Text style={styles.sectionTitle}>🛡️ 我的守护</Text>
           
-          {/* 送微光按钮 */}
+          <View style={styles.statsGrid}>
+            <TouchableOpacity style={styles.statCard} activeOpacity={0.8}>
+              <View style={[styles.statIconBg, { backgroundColor: 'rgba(255, 229, 160, 0.3)' }]}>
+                <Text style={styles.statIcon}>⭐</Text>
+              </View>
+              <Text style={styles.statNumber}>{sosSuccessCount}</Text>
+              <Text style={styles.statLabel}>累计守护</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.statCard} activeOpacity={0.8}>
+              <View style={[styles.statIconBg, { backgroundColor: 'rgba(165, 201, 232, 0.3)' }]}>
+                <Text style={styles.statIcon}>🌙</Text>
+              </View>
+              <Text style={styles.statNumber}>{Math.min(sosSuccessCount, 5)}</Text>
+              <Text style={styles.statLabel}>今日守护</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.statCard} activeOpacity={0.8}>
+              <View style={[styles.statIconBg, { backgroundColor: 'rgba(197, 168, 232, 0.3)' }]}>
+                <Text style={styles.statIcon}>💫</Text>
+              </View>
+              <Text style={styles.statNumber}>{sentLight || dailyLighthouseCompleted ? 1 : 0}</Text>
+              <Text style={styles.statLabel}>送出微光</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+        
+        {/* 送微光按钮 */}
+        <Animated.View entering={FadeInUp.delay(700)} style={styles.sendButtonContainer}>
           <TouchableOpacity
-            onPress={openSendModal}
+            onPress={() => setShowSendModal(true)}
             disabled={sentLight || dailyLighthouseCompleted}
             style={[
               styles.sendButton,
-              (sentLight || dailyLighthouseCompleted) && styles.sendButtonDisabled
+              (sentLight || dailyLighthouseCompleted) && styles.sendButtonDone
             ]}
+            activeOpacity={0.8}
           >
-            <Text style={[
-              styles.sendButtonText,
-              (sentLight || dailyLighthouseCompleted) && styles.sendButtonTextDisabled
-            ]}>
-              {sentLight || dailyLighthouseCompleted ? '你的温暖已送达 💫' : '送一束微光给陌生人 💫'}
-            </Text>
+            <View style={styles.sendButtonInner}>
+              <Text style={styles.sendButtonEmoji}>
+                {sentLight || dailyLighthouseCompleted ? '✓' : '💫'}
+              </Text>
+              <Text style={[
+                styles.sendButtonText,
+                (sentLight || dailyLighthouseCompleted) && styles.sendButtonTextDone
+              ]}>
+                {sentLight || dailyLighthouseCompleted ? '今日微光已送达' : '送一束微光给陌生人'}
+              </Text>
+            </View>
+            {!(sentLight || dailyLighthouseCompleted) && (
+              <View style={styles.sendButtonGlow} />
+            )}
           </TouchableOpacity>
-        </View>
+        </Animated.View>
+        
+        <View style={styles.bottomSpacer} />
       </ScrollView>
       
       {/* 送微光弹窗 */}
-      <Modal
-        visible={showSendModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowSendModal(false)}
-      >
+      <Modal visible={showSendModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.sendModalContent}>
-            <Text style={styles.sendModalTitle}>送一束微光 💫</Text>
-            <Text style={styles.sendModalSubtitle}>想对ta说点什么吗？（选填）</Text>
+          <Animated.View style={styles.sendModal} entering={ZoomIn.duration(300)}>
+            <View style={styles.sendModalHeader}>
+              <Text style={styles.sendModalEmoji}>💫</Text>
+              <Text style={styles.sendModalTitle}>送一束微光</Text>
+              <Text style={styles.sendModalSubtitle}>你的温暖会传递给某个深夜里的人</Text>
+            </View>
             
             <TextInput
               style={styles.sendModalInput}
               value={lightMessage}
               onChangeText={setLightMessage}
-              placeholder="今晚也辛苦了，你已经很棒了..."
+              placeholder="写点什么吧...（选填）"
               placeholderTextColor={colors.textMuted}
               multiline
               maxLength={100}
             />
             
+            <View style={styles.quickMessages}>
+              {['加油！', '你很棒', '抱抱你', '会好的'].map((msg, i) => (
+                <TouchableOpacity 
+                  key={i} 
+                  style={styles.quickMessageTag}
+                  onPress={() => setLightMessage(msg)}
+                >
+                  <Text style={styles.quickMessageText}>{msg}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
             <View style={styles.sendModalButtons}>
               <TouchableOpacity
                 onPress={() => setShowSendModal(false)}
-                style={styles.sendModalCancelButton}
+                style={styles.cancelButton}
               >
-                <Text style={styles.sendModalCancelText}>取消</Text>
+                <Text style={styles.cancelButtonText}>取消</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                onPress={sendLight}
-                style={styles.sendModalConfirmButton}
-              >
-                <Text style={styles.sendModalConfirmText}>发送 💫</Text>
+              <TouchableOpacity onPress={sendLight} style={styles.confirmButton}>
+                <Text style={styles.confirmButtonText}>送出微光 ✨</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
       
       {/* 收到微光弹窗 */}
-      <Modal
-        visible={receivedLight !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={closeReceivedLight}
-      >
+      <Modal visible={receivedLight !== null} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.receivedModalContent}>
+          <Animated.View style={styles.receivedModal} entering={ZoomIn.duration(300)}>
+            <View style={styles.receivedGlow} />
             <Text style={styles.receivedEmoji}>💫</Text>
-            <Text style={styles.receivedTitle}>有人给你送了一束微光</Text>
+            <Text style={styles.receivedTitle}>收到一束微光</Text>
             
-            {receivedLight?.message && (
-              <View style={styles.receivedMessageBox}>
-                <Text style={styles.receivedMessageLabel}>ta说：</Text>
-                <Text style={styles.receivedMessageText}>"{receivedLight.message}"</Text>
-              </View>
-            )}
+            <View style={styles.receivedMessageBox}>
+              <Text style={styles.receivedMessage}>"{receivedLight?.message}"</Text>
+            </View>
             
-            <Text style={styles.receivedSubtext}>在远方，有人正在想着你</Text>
+            <Text style={styles.receivedHint}>在远方，有人正在想着你</Text>
             
-            <TouchableOpacity onPress={closeReceivedLight} style={styles.receivedButton}>
+            <TouchableOpacity 
+              onPress={() => setReceivedLight(null)} 
+              style={styles.receivedButton}
+            >
               <Text style={styles.receivedButtonText}>收下这份温暖</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
       
-      {/* 蛋糕奖励 */}
-      <CakeRewardOverlay
-        visible={showCakeReward}
-        onComplete={() => setShowCakeReward(false)}
-      />
+      <CakeRewardOverlay visible={showCakeReward} onComplete={() => setShowCakeReward(false)} />
     </SafeAreaView>
+  );
+}
+
+// 漂浮微光组件
+function FloatingLight({ x, delay }: { x: number; delay: number }) {
+  const translateY = useSharedValue(SCREEN_HEIGHT);
+  const opacity = useSharedValue(0);
+  
+  useEffect(() => {
+    translateY.value = withDelay(
+      delay,
+      withRepeat(
+        withTiming(-100, { duration: 8000 + Math.random() * 4000, easing: Easing.linear }),
+        -1,
+        false
+      )
+    );
+    opacity.value = withDelay(
+      delay,
+      withRepeat(
+        withSequence(
+          withTiming(0.8, { duration: 2000 }),
+          withTiming(0.3, { duration: 4000 }),
+          withTiming(0, { duration: 2000 })
+        ),
+        -1,
+        false
+      )
+    );
+  }, []);
+  
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+    opacity: opacity.value,
+    left: x,
+  }));
+  
+  return (
+    <Animated.View style={[styles.floatingLight, style]}>
+      <View style={styles.floatingLightInner} />
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.backgroundGradient[0],
+    backgroundColor: '#0f0f1e',
+  },
+  starryBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  star: {
+    position: 'absolute',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+  },
+  floatingLight: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+  },
+  floatingLightInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.accent.yellow,
+    shadowColor: colors.accent.yellow,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
   },
   scrollView: {
     flex: 1,
   },
-  container: {
-    padding: 20,
+  
+  // 灯塔区域
+  lighthouseSection: {
+    alignItems: 'center',
+    paddingTop: 60,
     paddingBottom: 40,
   },
-  
-  // 灯塔地图
-  mapSection: {
-    height: 280,
-    backgroundColor: '#1a1a2e',
-    borderRadius: 24,
-    position: 'relative',
-    overflow: 'hidden',
+  lighthouseWrapper: {
+    width: 160,
+    height: 160,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
   },
-  star: {
+  glowOuter: {
     position: 'absolute',
-    borderRadius: 10,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: colors.accent.yellow,
   },
-  lighthouseContainer: {
-    alignItems: 'center',
-    marginBottom: 16,
+  glowMiddle: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: colors.accent.yellow,
   },
-  lighthouseGlow: {
+  glowInner: {
     position: 'absolute',
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: colors.lighthouse.light,
-    opacity: 0.3,
+    backgroundColor: colors.accent.yellow,
   },
-  lighthouseEmoji: {
-    fontSize: 40,
-  },
-  mapTextMain: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  mapTextSub: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.6)',
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  
-  // 守护记录
-  guardCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 20,
-  },
-  guardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 16,
-  },
-  guardStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  guardStatItem: {
+  lighthouse: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 229, 160, 0.5)',
   },
-  guardStatNumber: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: colors.text,
+  lighthouseIcon: {
+    fontSize: 36,
   },
-  guardStatLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 4,
+  onlineContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
-  guardDivider: {
-    width: 1,
-    backgroundColor: '#E0E0E0',
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4ADE80',
+    marginRight: 8,
+    shadowColor: '#4ADE80',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 6,
+  },
+  onlineCount: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.accent.yellow,
+    marginRight: 6,
+  },
+  onlineLabel: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  lighthouseQuote: {
+    marginTop: 24,
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontStyle: 'italic',
   },
   
   // 微光墙
-  lightWallCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 20,
-    height: 160,
-    overflow: 'hidden',
+  lightWallSection: {
+    paddingTop: 20,
   },
-  lightWallTitle: {
-    fontSize: 14,
+  sectionHeader: {
+    paddingHorizontal: 24,
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 18,
     fontWeight: '600',
-    color: colors.text,
-    marginBottom: 12,
+    color: '#fff',
+    marginBottom: 4,
   },
-  lightWallContainer: {
-    flex: 1,
-    overflow: 'hidden',
+  sectionSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.5)',
   },
   lightWallScroll: {
-    
+    paddingHorizontal: 20,
+    gap: 12,
   },
-  lightWallMessage: {
+  lightCard: {
+    width: 160,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 16,
+    padding: 16,
+    borderLeftWidth: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  lightCardEmoji: {
+    fontSize: 24,
+    marginBottom: 10,
+  },
+  lightCardText: {
     fontSize: 13,
-    color: '#6A6A8A',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.05)',
+    color: 'rgba(255, 255, 255, 0.8)',
+    lineHeight: 20,
+  },
+  
+  // 统计区域
+  statsSection: {
+    padding: 24,
+    paddingTop: 30,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 20,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  statIconBg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  statIcon: {
+    fontSize: 22,
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  statLabel: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.5)',
+    marginTop: 4,
   },
   
   // 送微光按钮
-  sendButton: {
-    backgroundColor: colors.accent.blue,
-    borderRadius: 20,
-    padding: 18,
-    alignItems: 'center',
-    shadowColor: colors.accent.blue,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 6,
+  sendButtonContainer: {
+    paddingHorizontal: 24,
+    paddingTop: 10,
   },
-  sendButtonDisabled: {
-    backgroundColor: '#E0E0E0',
-    shadowOpacity: 0,
+  sendButton: {
+    backgroundColor: 'rgba(255, 229, 160, 0.15)',
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 229, 160, 0.4)',
+    overflow: 'hidden',
+  },
+  sendButtonDone: {
+    backgroundColor: 'rgba(74, 222, 128, 0.15)',
+    borderColor: 'rgba(74, 222, 128, 0.4)',
+  },
+  sendButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  sendButtonEmoji: {
+    fontSize: 20,
   },
   sendButtonText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
+    color: colors.accent.yellow,
   },
-  sendButtonTextDisabled: {
-    color: '#999',
+  sendButtonTextDone: {
+    color: '#4ADE80',
+  },
+  sendButtonGlow: {
+    position: 'absolute',
+    top: -50,
+    left: '30%',
+    width: '40%',
+    height: 100,
+    backgroundColor: 'rgba(255, 229, 160, 0.1)',
+    borderRadius: 50,
+    transform: [{ rotate: '15deg' }],
   },
   
-  // 弹窗通用
+  bottomSpacer: {
+    height: 100,
+  },
+  
+  // 弹窗
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
-  
-  // 送微光弹窗
-  sendModalContent: {
-    backgroundColor: colors.backgroundGradient[0],
-    borderRadius: 24,
-    padding: 30,
+  sendModal: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 28,
+    padding: 28,
     width: '100%',
-    maxWidth: 320,
+    maxWidth: 340,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  sendModalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: 20,
+  sendModalHeader: {
+    alignItems: 'center',
+    marginBottom: 24,
   },
-  sendModalSubtitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
+  sendModalEmoji: {
+    fontSize: 48,
     marginBottom: 12,
   },
+  sendModalTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 6,
+  },
+  sendModalSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.5)',
+    textAlign: 'center',
+  },
   sendModalInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 14,
-    color: colors.text,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 16,
+    padding: 16,
+    fontSize: 15,
+    color: '#fff',
     minHeight: 80,
     textAlignVertical: 'top',
-    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  quickMessages: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+    marginBottom: 24,
+  },
+  quickMessageTag: {
+    backgroundColor: 'rgba(255, 229, 160, 0.15)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 229, 160, 0.3)',
+  },
+  quickMessageText: {
+    fontSize: 13,
+    color: colors.accent.yellow,
   },
   sendModalButtons: {
     flexDirection: 'row',
     gap: 12,
   },
-  sendModalCancelButton: {
+  cancelButton: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderRadius: 16,
-    padding: 14,
+    padding: 16,
     alignItems: 'center',
   },
-  sendModalCancelText: {
-    fontSize: 14,
-    color: colors.textSecondary,
+  cancelButtonText: {
+    fontSize: 15,
+    color: 'rgba(255, 255, 255, 0.6)',
   },
-  sendModalConfirmButton: {
-    flex: 1,
-    backgroundColor: colors.accent.blue,
+  confirmButton: {
+    flex: 1.5,
+    backgroundColor: colors.accent.yellow,
     borderRadius: 16,
-    padding: 14,
+    padding: 16,
     alignItems: 'center',
   },
-  sendModalConfirmText: {
-    fontSize: 14,
+  confirmButtonText: {
+    fontSize: 15,
     fontWeight: '600',
-    color: colors.text,
+    color: '#1a1a2e',
   },
   
   // 收到微光弹窗
-  receivedModalContent: {
-    backgroundColor: colors.backgroundGradient[0],
-    borderRadius: 24,
-    padding: 40,
-    paddingHorizontal: 30,
+  receivedModal: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 28,
+    padding: 36,
     alignItems: 'center',
-    width: 280,
+    width: 300,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 229, 160, 0.2)',
+    overflow: 'hidden',
+  },
+  receivedGlow: {
+    position: 'absolute',
+    top: -60,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(255, 229, 160, 0.15)',
   },
   receivedEmoji: {
-    fontSize: 50,
-    marginBottom: 20,
+    fontSize: 56,
+    marginBottom: 16,
   },
   receivedTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
-    color: colors.text,
-    marginBottom: 12,
+    color: '#fff',
+    marginBottom: 20,
   },
   receivedMessageBox: {
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 16,
+    padding: 16,
     width: '100%',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  receivedMessageLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  receivedMessageText: {
+  receivedMessage: {
     fontSize: 15,
-    color: colors.text,
+    color: 'rgba(255, 255, 255, 0.9)',
+    textAlign: 'center',
+    lineHeight: 22,
   },
-  receivedSubtext: {
-    fontSize: 14,
-    color: colors.textSecondary,
+  receivedHint: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.5)',
     marginBottom: 24,
   },
   receivedButton: {
-    backgroundColor: colors.accent.blue,
+    backgroundColor: colors.accent.yellow,
     borderRadius: 20,
-    paddingHorizontal: 40,
+    paddingHorizontal: 36,
     paddingVertical: 14,
   },
   receivedButtonText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-    color: colors.text,
+    color: '#1a1a2e',
   },
 });

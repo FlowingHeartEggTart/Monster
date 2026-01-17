@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, TextInput, ScrollView, SafeAreaView } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, TextInput, ScrollView, SafeAreaView, Image, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useCreatureStore, MonsterType, MONSTER_TYPES } from '@/store/creatureStore';
 import { colors } from '@/theme/colors';
@@ -10,7 +10,9 @@ import Animated, {
   withSequence,
   withRepeat,
   withTiming,
+  withDelay,
   Easing,
+  runOnJS,
 } from 'react-native-reanimated';
 
 // Onboarding数据
@@ -70,9 +72,15 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [monsterName, setMonsterName] = useState('');
+  const [showSpeechBubble, setShowSpeechBubble] = useState(false);
+  const [speechText, setSpeechText] = useState('');
   
   const scale = useSharedValue(1);
   const floatY = useSharedValue(0);
+  const monsterY = useSharedValue(500); // 怪兽从底部升起
+  const monsterOpacity = useSharedValue(0);
+  const bubbleOpacity = useSharedValue(0);
+  const bubbleScale = useSharedValue(0.8);
   
   // 浮动动画
   useEffect(() => {
@@ -93,26 +101,91 @@ export default function OnboardingScreen() {
   const scaleAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
+  
+  // 怪兽入场动画样式
+  const monsterEntranceStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: monsterY.value },
+      { scale: scale.value },
+    ],
+    opacity: monsterOpacity.value,
+  }));
+  
+  // 对话气泡动画样式
+  const bubbleAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: bubbleOpacity.value,
+    transform: [{ scale: bubbleScale.value }],
+  }));
 
+  // 打字机效果
+  const [typingText, setTypingText] = useState('');
+  const [isTypingComplete, setIsTypingComplete] = useState(false);
+  
+  const typeText = (text: string, onComplete?: () => void) => {
+    setTypingText('');
+    let index = 0;
+    const interval = setInterval(() => {
+      if (index < text.length) {
+        setTypingText(prev => prev + text[index]);
+        index++;
+      } else {
+        clearInterval(interval);
+        setIsTypingComplete(true);
+        onComplete?.();
+      }
+    }, 80); // 每个字符 80ms
+    return interval;
+  };
+  
   // 统一的 useEffect，在 step === 5 时执行
   useEffect(() => {
     if (step === 5) {
-      // 动画
-      scale.value = withSequence(
-        withSpring(1.2),
-        withSpring(1)
+      const selectedType = answers.monsterType as MonsterType;
+      const finalName = answers.name;
+      
+      // 怪兽从底部升起动画
+      monsterOpacity.value = withTiming(1, { duration: 500 });
+      monsterY.value = withSequence(
+        withTiming(0, { duration: 1500, easing: Easing.out(Easing.cubic) }),
+        withSpring(-10, { damping: 8 }), // 轻微弹跳
+        withSpring(0, { damping: 10 })
       );
       
-      // 3秒后自动进入主页
+      // 缩放动画
+      scale.value = withDelay(1500, withSequence(
+        withSpring(1.1, { damping: 8 }),
+        withSpring(1, { damping: 10 })
+      ));
+      
+      // 2秒后显示对话气泡并开始打字机效果
+      const bubbleTimer = setTimeout(() => {
+        setShowSpeechBubble(true);
+        bubbleOpacity.value = withTiming(1, { duration: 400 });
+        bubbleScale.value = withSpring(1, { damping: 12 });
+        
+        // 打字机效果："你好呀，我是[name]"
+        const typingInterval = typeText(`你好呀，我是${finalName}`, () => {
+          // 第一句话完成后，过1秒显示第二句
+          setTimeout(() => {
+            setIsTypingComplete(false);
+            typeText('以后，我陪你。');
+          }, 1000);
+        });
+        
+        return () => clearInterval(typingInterval);
+      }, 2000);
+      
+      // 6秒后自动进入主页（给打字机效果更多时间）
       const timer = setTimeout(() => {
-        const selectedType = answers.monsterType as MonsterType;
-        const finalName = answers.name;
         setMonster(selectedType, finalName);
         completeOnboarding();
         router.replace('/');
-      }, 3000);
+      }, 6000);
       
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(bubbleTimer);
+      };
     }
   }, [step, answers, scale, setMonster, completeOnboarding, router]);
 
@@ -202,45 +275,94 @@ export default function OnboardingScreen() {
     );
   }
 
-  // 起名字
+  // 起名字 - 重新设计的梦幻界面
   if (currentStep.type === 'name') {
     const selectedType = answers.monsterType as MonsterType;
     const monsterConfig = MONSTER_TYPES[selectedType];
     
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.content}>
-          <Text style={styles.nameTitle}>{currentStep.question}</Text>
+        <View style={styles.nameContent}>
+          {/* 装饰星星 */}
+          <Text style={styles.nameSparkle1}>✨</Text>
+          <Text style={styles.nameSparkle2}>·</Text>
+          <Text style={styles.nameSparkle3}>✨</Text>
+          <Text style={styles.nameSparkle4}>·</Text>
           
-          <Animated.View style={[styles.monsterPreview, floatAnimatedStyle]}>
-            <View style={[styles.monsterCircle, { backgroundColor: monsterConfig.color }]}>
-              <Text style={styles.monsterEmoji}>{monsterConfig.emoji}</Text>
-            </View>
+          {/* 顶部光晕装饰 */}
+          <Animated.View style={[styles.nameGlowTop, floatAnimatedStyle]}>
+            <View style={[styles.nameGlowCircle, { backgroundColor: monsterConfig.color }]} />
           </Animated.View>
           
-          <TextInput
-            style={styles.nameInput}
-            value={monsterName}
-            onChangeText={setMonsterName}
-            placeholder={currentStep.placeholder}
-            placeholderTextColor={colors.textMuted}
-            maxLength={10}
-          />
+          {/* 标题区域 */}
+          <View style={styles.nameTitleSection}>
+            <Text style={styles.nameLabel}>最后一步</Text>
+            <Text style={styles.nameTitle}>{currentStep.question}</Text>
+            <Text style={styles.nameSubtitle}>给ta一个专属的称呼吧</Text>
+          </View>
           
-          <Text style={styles.nameHint}>之后也可以改哦</Text>
+          {/* 输入卡片 */}
+          <View style={styles.nameInputCard}>
+            {/* 卡片顶部装饰 */}
+            <View style={styles.nameCardDecoration}>
+              <View style={[styles.nameCardDot, { backgroundColor: colors.accent.pink }]} />
+              <View style={[styles.nameCardDot, { backgroundColor: colors.accent.yellow }]} />
+              <View style={[styles.nameCardDot, { backgroundColor: colors.accent.blue }]} />
+            </View>
+            
+            {/* 输入框 */}
+            <View style={styles.nameInputWrapper}>
+              <TextInput
+                style={styles.nameInput}
+                value={monsterName}
+                onChangeText={setMonsterName}
+                placeholder={monsterConfig.defaultName}
+                placeholderTextColor={colors.textMuted}
+                maxLength={10}
+                autoFocus
+              />
+              <View style={[styles.nameInputUnderline, { backgroundColor: monsterConfig.color }]} />
+            </View>
+            
+            {/* 提示文字 */}
+            <Text style={styles.nameCharCount}>{monsterName.length}/10</Text>
+          </View>
           
+          {/* 性格预览标签 */}
+          <View style={[styles.personalityTag, { backgroundColor: `${monsterConfig.color}30`, borderColor: monsterConfig.color }]}>
+            <Text style={[styles.personalityTagText, { color: monsterConfig.color }]}>
+              {monsterConfig.personality}
+            </Text>
+          </View>
+          
+          {/* 提示 */}
+          <Text style={styles.nameHint}>💡 之后也可以改哦</Text>
+          
+          {/* 确定按钮 */}
           <TouchableOpacity
-            style={styles.primaryButton}
+            style={[styles.nameConfirmButton, { backgroundColor: monsterConfig.color }]}
             onPress={handleNameSubmit}
+            activeOpacity={0.8}
           >
-            <Text style={styles.primaryButtonText}>确定</Text>
+            <Text style={styles.nameConfirmText}>就叫这个名字</Text>
+          </TouchableOpacity>
+          
+          {/* 跳过按钮 */}
+          <TouchableOpacity
+            style={styles.nameSkipButton}
+            onPress={() => {
+              setMonsterName('');
+              handleNameSubmit();
+            }}
+          >
+            <Text style={styles.nameSkipText}>用默认名字「{monsterConfig.defaultName}」</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  // 匹配结果
+  // 匹配结果 - 怪兽出场动画
   if (currentStep.type === 'result') {
     const selectedType = answers.monsterType as MonsterType;
     const finalName = answers.name;
@@ -254,28 +376,47 @@ export default function OnboardingScreen() {
     
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.content}>
-          <Text style={styles.resultSubtitle}>{currentStep.title}</Text>
+        <View style={styles.resultContent}>
+          {/* 装饰粒子 */}
+          <Text style={styles.particle1}>✨</Text>
+          <Text style={styles.particle2}>·</Text>
+          <Text style={styles.particle3}>✨</Text>
+          <Text style={styles.particle4}>·</Text>
           
-          <Animated.View style={[styles.resultMonster, scaleAnimatedStyle, floatAnimatedStyle]}>
-            <View style={[styles.resultMonsterCircle, { backgroundColor: monsterConfig.color }]}>
-              <Text style={styles.resultMonsterEmoji}>{monsterConfig.emoji}</Text>
+          {/* 对话气泡 */}
+          {showSpeechBubble && (
+            <Animated.View style={[styles.entranceBubble, bubbleAnimatedStyle]}>
+              <Text style={styles.entranceBubbleText}>「{typingText || '...'}」</Text>
+            </Animated.View>
+          )}
+          
+          {/* 怪兽从底部升起 */}
+          <Animated.View style={[styles.monsterEntrance, monsterEntranceStyle]}>
+            <View style={[styles.monsterCircle, { backgroundColor: monsterConfig.color }]}>
+              <Image 
+                source={monsterConfig.index === 1 
+                  ? require('../assets/monster1.jpg')
+                  : require('../assets/monster2.jpg')
+                }
+                style={styles.monsterImage}
+                resizeMode="cover"
+              />
             </View>
           </Animated.View>
           
+          {/* 怪兽名字 */}
           <Text style={styles.resultName}>{finalName}</Text>
           <Text style={styles.resultPersonality}>{personalityMap[selectedType]}</Text>
           
-          <View style={styles.resultSpeechBubble}>
-            <Text style={styles.resultSpeechText}>💬 "你好呀，以后我陪你。"</Text>
-          </View>
-          
+          {/* 点击进入按钮 */}
           <TouchableOpacity
-            style={styles.startButton}
+            style={[styles.startButton, { backgroundColor: monsterConfig.color }]}
             onPress={finishOnboarding}
           >
             <Text style={styles.startButtonText}>一起开始</Text>
           </TouchableOpacity>
+          
+          <Text style={styles.skipHint}>点击任意位置或等待自动进入</Text>
         </View>
       </SafeAreaView>
     );
@@ -401,51 +542,160 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   
-  // 起名页
-  nameTitle: {
+  // 起名页 - 重新设计
+  nameContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  nameSparkle1: {
+    position: 'absolute',
+    top: 80,
+    left: 30,
+    fontSize: 18,
+    opacity: 0.5,
+  },
+  nameSparkle2: {
+    position: 'absolute',
+    top: 120,
+    right: 40,
+    fontSize: 24,
+    opacity: 0.3,
+  },
+  nameSparkle3: {
+    position: 'absolute',
+    bottom: 180,
+    left: 50,
+    fontSize: 14,
+    opacity: 0.4,
+  },
+  nameSparkle4: {
+    position: 'absolute',
+    bottom: 220,
+    right: 60,
     fontSize: 20,
-    fontWeight: '600',
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: 40,
+    opacity: 0.3,
   },
-  monsterPreview: {
-    marginBottom: 40,
+  nameGlowTop: {
+    position: 'absolute',
+    top: 60,
   },
-  monsterCircle: {
+  nameGlowCircle: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    justifyContent: 'center',
+    opacity: 0.15,
+  },
+  nameTitleSection: {
     alignItems: 'center',
-    shadowColor: colors.text,
-    shadowOffset: { width: 0, height: 15 },
-    shadowOpacity: 0.3,
-    shadowRadius: 30,
-    elevation: 10,
+    marginBottom: 40,
   },
-  monsterEmoji: {
-    fontSize: 60,
+  nameLabel: {
+    fontSize: 13,
+    color: colors.accent.purple,
+    fontWeight: '600',
+    letterSpacing: 2,
+    marginBottom: 12,
   },
-  nameInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 16,
-    padding: 16,
-    fontSize: 18,
+  nameTitle: {
+    fontSize: 26,
+    fontWeight: '700',
     color: colors.text,
     textAlign: 'center',
-    width: 200,
-    marginBottom: 16,
-    shadowColor: colors.accent.blue,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 3,
+    marginBottom: 8,
   },
-  nameHint: {
+  nameSubtitle: {
     fontSize: 14,
     color: colors.textSecondary,
-    marginBottom: 40,
+  },
+  nameInputCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 28,
+    padding: 28,
+    paddingTop: 20,
+    width: '100%',
+    alignItems: 'center',
+    shadowColor: colors.accent.purple,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 10,
+    marginBottom: 20,
+  },
+  nameCardDecoration: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 24,
+  },
+  nameCardDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    opacity: 0.6,
+  },
+  nameInputWrapper: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  nameInput: {
+    fontSize: 28,
+    fontWeight: '600',
+    color: colors.text,
+    textAlign: 'center',
+    width: '100%',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  nameInputUnderline: {
+    width: 120,
+    height: 3,
+    borderRadius: 2,
+    marginTop: 4,
+  },
+  nameCharCount: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 16,
+  },
+  personalityTag: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    marginBottom: 16,
+  },
+  personalityTagText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  nameHint: {
+    fontSize: 13,
+    color: colors.textMuted,
+    marginBottom: 32,
+  },
+  nameConfirmButton: {
+    paddingHorizontal: 48,
+    paddingVertical: 16,
+    borderRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 8,
+    marginBottom: 16,
+  },
+  nameConfirmText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  nameSkipButton: {
+    paddingVertical: 12,
+  },
+  nameSkipText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textDecorationLine: 'underline',
   },
   
   // 结果页
@@ -472,6 +722,87 @@ const styles = StyleSheet.create({
   resultMonsterEmoji: {
     fontSize: 70,
   },
+  
+  // 新的结果页样式
+  resultContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  particle1: {
+    position: 'absolute',
+    top: 100,
+    left: 40,
+    fontSize: 20,
+    opacity: 0.6,
+  },
+  particle2: {
+    position: 'absolute',
+    top: 150,
+    right: 50,
+    fontSize: 28,
+    opacity: 0.4,
+  },
+  particle3: {
+    position: 'absolute',
+    bottom: 200,
+    left: 60,
+    fontSize: 16,
+    opacity: 0.5,
+  },
+  particle4: {
+    position: 'absolute',
+    bottom: 250,
+    right: 40,
+    fontSize: 24,
+    opacity: 0.3,
+  },
+  entranceBubble: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 24,
+    paddingHorizontal: 28,
+    paddingVertical: 16,
+    marginBottom: 30,
+    shadowColor: colors.accent.purple,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  entranceBubbleText: {
+    fontSize: 18,
+    color: colors.text,
+    textAlign: 'center',
+    lineHeight: 26,
+  },
+  monsterEntrance: {
+    marginBottom: 24,
+  },
+  monsterCircle: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: colors.text,
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.3,
+    shadowRadius: 30,
+    elevation: 15,
+    overflow: 'hidden',
+  },
+  monsterImage: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+  },
+  skipHint: {
+    marginTop: 20,
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  
   resultName: {
     fontSize: 28,
     fontWeight: '600',

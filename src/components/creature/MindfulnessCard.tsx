@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Modal } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/theme/colors';
 import { useCreatureStore } from '@/store/creatureStore';
 import Animated, {
@@ -7,7 +8,8 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
-  withSequence,
+  FadeIn,
+  SlideInUp,
 } from 'react-native-reanimated';
 
 interface MindfulnessCardProps {
@@ -16,7 +18,7 @@ interface MindfulnessCardProps {
 }
 
 /**
- * 正念卡片弹窗 - 简化版
+ * 正念卡片弹窗 - 毛玻璃效果
  * 显示 Day1 内容，点击「收下了」蛋糕+1 并关闭
  */
 export function MindfulnessCard({ visible, onClose }: MindfulnessCardProps) {
@@ -57,9 +59,12 @@ export function MindfulnessCard({ visible, onClose }: MindfulnessCardProps) {
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
+        {/* 卡片阴影层（叠层效果） */}
+        <View style={styles.cardShadow} />
+        
         <Animated.View style={[styles.card, cardAnimatedStyle]}>
-          {/* 顶部彩色条 */}
-          <View style={styles.topBar} />
+          {/* 顶部高光线 */}
+          <View style={styles.cardHighlight} />
           
           {/* 卡片头部 */}
           <View style={styles.cardHeader}>
@@ -72,7 +77,7 @@ export function MindfulnessCard({ visible, onClose }: MindfulnessCardProps) {
             </View>
           </View>
           
-          {/* 卡片内容 */}
+          {/* 卡片内容 - 带左侧边框 */}
           <View style={styles.cardContent}>
             <Text style={styles.cardText}>
               情绪性进食不是意志力的问题，{'\n'}
@@ -84,7 +89,7 @@ export function MindfulnessCard({ visible, onClose }: MindfulnessCardProps) {
           {/* 来源 */}
           <Text style={styles.cardSource}>—— 《直觉饮食》</Text>
           
-          {/* 按钮 */}
+          {/* 按钮 - 渐变 */}
           <TouchableOpacity
             style={[
               styles.acceptButton,
@@ -93,9 +98,18 @@ export function MindfulnessCard({ visible, onClose }: MindfulnessCardProps) {
             onPress={handleAccept}
             activeOpacity={0.8}
           >
-            <Text style={styles.acceptButtonText}>
-              {dailyMindfulnessCompleted ? '今日已领取' : '收下了 🍰 +1'}
-            </Text>
+            {!dailyMindfulnessCompleted ? (
+              <LinearGradient
+                colors={colors.gradients.button as [string, string]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.buttonGradient}
+              >
+                <Text style={styles.acceptButtonText}>收下了 🍰 +1</Text>
+              </LinearGradient>
+            ) : (
+              <Text style={styles.acceptButtonTextDisabled}>今日已领取</Text>
+            )}
           </TouchableOpacity>
           
           {/* 关闭按钮 */}
@@ -109,41 +123,60 @@ export function MindfulnessCard({ visible, onClose }: MindfulnessCardProps) {
 }
 
 const styles = StyleSheet.create({
+  // 遮罩层 - 毛玻璃效果
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(74, 74, 106, 0.5)',
+    backgroundColor: 'rgba(74, 74, 106, 0.4)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
+  
+  // 卡片阴影层（叠层效果）
+  cardShadow: {
+    position: 'absolute',
+    top: '50%',
+    left: 32,
+    right: 24,
+    height: 280,
+    marginTop: -132,
+    backgroundColor: 'rgba(165, 137, 193, 0.25)',
+    borderRadius: colors.radius.lg,
+  },
+  
+  // 卡片主体 - 毛玻璃
   card: {
-    backgroundColor: colors.white,
-    borderRadius: 24,
-    padding: 28,
+    backgroundColor: colors.glass.bgStrong,
+    borderRadius: colors.radius.lg,
+    padding: 24,
+    paddingTop: 20,
     width: '100%',
-    maxWidth: 340,
-    shadowColor: '#A5C9E8',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 24,
+    maxWidth: 280,
+    shadowColor: colors.blue.primary,
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.1,
+    shadowRadius: 60,
     elevation: 12,
     position: 'relative',
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.glass.border,
   },
-  topBar: {
+  
+  // 顶部高光线
+  cardHighlight: {
     position: 'absolute',
     top: 0,
-    left: 0,
-    right: 0,
-    height: 6,
-    backgroundColor: '#A5C9E8',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    left: 20,
+    right: 20,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
   },
+  
   closeButton: {
     position: 'absolute',
-    top: 16,
-    right: 16,
+    top: 12,
+    right: 12,
     width: 32,
     height: 32,
     justifyContent: 'center',
@@ -151,14 +184,14 @@ const styles = StyleSheet.create({
   },
   closeButtonText: {
     fontSize: 28,
-    color: '#8B7BA8',
+    color: colors.textMuted,
     fontWeight: '300',
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 24,
+    marginBottom: 20,
     marginTop: 8,
   },
   cardEmoji: {
@@ -170,14 +203,14 @@ const styles = StyleSheet.create({
   cardDay: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#A5C9E8',
+    color: colors.blue.primary,
     marginBottom: 6,
   },
   categoryTag: {
-    backgroundColor: '#D4E5F7',
+    backgroundColor: 'rgba(165, 201, 232, 0.3)',
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: colors.radius.sm,
     alignSelf: 'flex-start',
   },
   categoryText: {
@@ -185,46 +218,59 @@ const styles = StyleSheet.create({
     color: '#4A6A8A',
     fontWeight: '500',
   },
+  
+  // 卡片内容区 - 带左侧边框
   cardContent: {
-    backgroundColor: 'rgba(248, 245, 252, 0.8)',
+    backgroundColor: 'rgba(165, 201, 232, 0.1)',
     borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#A5C9E8',
+    padding: 16,
+    marginBottom: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.blue.primary,
   },
   cardText: {
-    fontSize: 17,
-    lineHeight: 28,
-    color: '#4A4A6A',
+    fontSize: 15,
+    lineHeight: 1.8 * 15,
+    color: colors.text,
     fontWeight: '500',
-    letterSpacing: 0.3,
   },
   cardSource: {
-    fontSize: 13,
-    color: '#8B7BA8',
+    fontSize: 12,
+    color: colors.blue.primary,
     textAlign: 'right',
-    marginBottom: 24,
+    marginBottom: 20,
   },
+  
+  // 按钮
   acceptButton: {
-    backgroundColor: '#A5C9E8',
-    borderRadius: 20,
-    paddingVertical: 16,
-    alignItems: 'center',
-    shadowColor: '#A5C9E8',
+    borderRadius: colors.radius.full,
+    overflow: 'hidden',
+    shadowColor: colors.shadow.pink,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
+    shadowOpacity: 1,
+    shadowRadius: 16,
     elevation: 4,
   },
+  buttonGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
   acceptButtonDisabled: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: 'rgba(200, 200, 200, 0.5)',
+    paddingVertical: 14,
+    alignItems: 'center',
     shadowOpacity: 0,
   },
   acceptButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: colors.white,
+    letterSpacing: 0.5,
+  },
+  acceptButtonTextDisabled: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textMuted,
     letterSpacing: 0.5,
   },
 });
