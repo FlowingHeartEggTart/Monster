@@ -59,21 +59,26 @@ interface CreatureStore {
   monsterType: MonsterType | null;
   monsterName: string | null;
   hasCompletedOnboarding: boolean;
-  
+
+  // AI 匹配数据（新增）
+  matchScore: number | null;         // 匹配度
+  matchReason: string | null;        // 匹配理由
+  matchTraits: string[];             // 怪兽特质
+
   // 蛋糕经济
   cakeCount: number;
-  
+
   // 日常任务状态
   dailyMindfulnessCompleted: boolean;
   dailyLighthouseCompleted: boolean;
   lastResetDate: string;
-  
+
   // 统计
   sosSuccessCount: number;
   totalDays: number;
-  
+
   // Actions
-  setMonster: (type: MonsterType, name: string) => void;
+  setMonster: (type: MonsterType, name: string, matchData?: { score: number; reason: string; traits: string[] }) => void;
   completeOnboarding: () => void;
   addCake: (count: number) => void;
   useCake: (count: number) => boolean;
@@ -93,15 +98,24 @@ export const useCreatureStore = create<CreatureStore>((set, get) => ({
   monsterType: null,
   monsterName: null,
   hasCompletedOnboarding: false,
+  matchScore: null,
+  matchReason: null,
+  matchTraits: [],
   cakeCount: 0,
   dailyMindfulnessCompleted: false,
   dailyLighthouseCompleted: false,
   lastResetDate: getTodayDate(),
   sosSuccessCount: 0,
   totalDays: 0,
-  
-  setMonster: (type: MonsterType, name: string) => {
-    set({ monsterType: type, monsterName: name });
+
+  setMonster: (type: MonsterType, name: string, matchData?: { score: number; reason: string; traits: string[] }) => {
+    set({
+      monsterType: type,
+      monsterName: name,
+      matchScore: matchData?.score || null,
+      matchReason: matchData?.reason || null,
+      matchTraits: matchData?.traits || [],
+    });
     get().saveToStorage();
   },
   
@@ -161,6 +175,9 @@ export const useCreatureStore = create<CreatureStore>((set, get) => ({
       monsterType: null,
       monsterName: null,
       hasCompletedOnboarding: false,
+      matchScore: null,
+      matchReason: null,
+      matchTraits: [],
       cakeCount: 0,
       dailyMindfulnessCompleted: false,
       dailyLighthouseCompleted: false,
@@ -174,7 +191,7 @@ export const useCreatureStore = create<CreatureStore>((set, get) => ({
       console.error('Failed to clear creature data:', error);
     }
   },
-  
+
   saveToStorage: async () => {
     const state = get();
     try {
@@ -182,6 +199,9 @@ export const useCreatureStore = create<CreatureStore>((set, get) => ({
         monsterType: state.monsterType,
         monsterName: state.monsterName,
         hasCompletedOnboarding: state.hasCompletedOnboarding,
+        matchScore: state.matchScore,
+        matchReason: state.matchReason,
+        matchTraits: state.matchTraits,
         cakeCount: state.cakeCount,
         dailyMindfulnessCompleted: state.dailyMindfulnessCompleted,
         dailyLighthouseCompleted: state.dailyLighthouseCompleted,
